@@ -3,23 +3,32 @@ import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { AxiosResponse, AxiosError } from 'axios';
 import { firstValueFrom } from 'rxjs';
 import * as queryString from 'querystring';
-import { IAuthenticationResponse } from './interfaces';
+import {
+  IAuthenticationResponse,
+  IUSerAuthenticationResponse,
+} from './interfaces';
 import { generateShortUuid } from 'custom-uuid';
 import { ConfigService } from '@nestjs/config';
+import { ISecret, VaultService } from '../vault/vault.service';
+import {
+  IErrorAuthorizationResponse,
+  ISuccessAuthorizationResponse,
+} from './interfaces/userAuthorizationResponse.interface';
 
 @Injectable()
 export class AuthenticationService {
+  private readonly state = 'fixed_state_for_testing_reasons';
   constructor(
     private readonly httpService: HttpService,
     private readonly config: ConfigService,
+    private readonly vaultService: VaultService,
   ) {}
-  async RequestAccessToken(): Promise<IAuthenticationResponse> {
+  async requestAccessToken(): Promise<IAuthenticationResponse> {
     try {
-      // const { SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET } = process.env;
-      const SPOTIFY_CLIENT_ID = this.config.get<string>('client_id');
-      const SPOTIFY_CLIENT_SECRET = this.config.get<string>('client_secret');
-      console.log(SPOTIFY_CLIENT_ID);
-      if (!SPOTIFY_CLIENT_ID || !SPOTIFY_CLIENT_SECRET) {
+      const client_id = this.config.get<string>('client_id');
+      const client_secret = this.config.get<string>('client_secret');
+
+      if (!client_id || !client_secret) {
         throw new HttpException(
           'Something went wrong. please contact the developer',
           HttpStatus.INTERNAL_SERVER_ERROR,
@@ -35,9 +44,7 @@ export class AuthenticationService {
               'Content-Type': 'application/x-www-form-urlencoded',
               Authorization:
                 'Basic ' +
-                Buffer.from(
-                  `${SPOTIFY_CLIENT_ID}:${SPOTIFY_CLIENT_SECRET}`,
-                ).toString('base64'),
+                Buffer.from(`${client_id}:${client_secret}`).toString('base64'),
             },
           }),
         );
@@ -47,7 +54,7 @@ export class AuthenticationService {
       const typedError = error as AxiosError;
       throw new HttpException(
         {
-          message: 'Authentication error',
+          message: 'Authentication error.',
           detail: typedError.message,
           response: typedError.response.data,
         },
@@ -59,20 +66,78 @@ export class AuthenticationService {
     }
   }
 
-  RequestUserAuthorization() {
-    const state = generateShortUuid();
-    console.log(state);
+  requestUserAuthorization() {
     const client_id = this.config.get<string>('client_id');
-    console.log(client_id);
-    const scope = 'user-read-private user-read-email';
+    const scope =
+      'user-read-private user-read-email, user-read-currently-playing user-modify-playback-state user-read-playback-state';
     const redirect_uri =
       'http://localhost:3000/spotify/authentication/callback';
+
     return `https://accounts.spotify.com/authorize?${queryString.stringify({
       response_type: 'code',
       client_id: client_id,
       scope: scope,
       redirect_uri: redirect_uri,
-      state: state,
+      state: this.state,
     })}`;
+  }
+
+  async requestUserAccessToken(
+    authorizationResponse:
+      | ISuccessAuthorizationResponse
+      | IErrorAuthorizationResponse,
+  ) {
+    const success = authorizationResponse as ISuccessAuthorizationResponse;
+    if (success.code === undefined) {
+      throw new HttpException(
+        'An Error occurred',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+    const secret: ISecret = {
+      state: authorizationResponse.state,
+      code: (authorizationResponse as ISuccessAuthorizationResponse).code,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    const updated = this.vaultService.updateSecret(secret);
+    if (updated === null) {
+      this.vaultService.addSecret(secret);
+    }
+
+    const data = {
+      grant_type: 'authorization_code',
+      code: success.code,
+      redirect_uri: 'http://localhost:3000/spotify/authentication/callback',
+    };
+
+    const client_id = this.config.get<string>('client_id');
+    const client_secret = this.config.get<string>('client_secret');
+    const urlPath = '/api/token';
+
+    const response = await firstValueFrom(
+      this.httpService.post<IUSerAuthenticationResponse>(
+        urlPath,
+        queryString.stringify(data),
+        {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            Authorization:
+              'Basic ' +
+              Buffer.from(`${client_id}:${client_secret}`).toString('base64'),
+          },
+        },
+      ),
+    );
+
+    if (response.status >= 200 && response.status < 300) {
+      const { access_token, refresh_token, expires_in, scope } = response.data;
+      secret.accessToken = access_token;
+      secret.refreshToken = refresh_token;
+      secret.expiresIn = expires_in;
+      secret.scope = scope;
+      this.vaultService.updateSecret(secret);
+      return { message: 'You can close this now' };
+    }
   }
 }

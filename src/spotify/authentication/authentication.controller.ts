@@ -6,7 +6,7 @@ export class AuthenticationController {
   constructor(private readonly service: AuthenticationService) {}
   @Get('authenticate')
   async authenticate() {
-    const response = await this.service.RequestAccessToken();
+    const response = await this.service.requestAccessToken();
     console.log(response);
     return response;
   }
@@ -14,14 +14,25 @@ export class AuthenticationController {
   @Get('authorize')
   authorize() {
     return {
-      url: this.service.RequestUserAuthorization(),
+      url: this.service.requestUserAuthorization(),
     };
   }
 
   @Get('callback')
-  callBack(@Query('code') code: string, @Query('state') state: string) {
+  callBack(
+    @Query('code') code: string,
+    @Query('state') state: string,
+    @Query('error') error: string,
+  ) {
     console.log(code);
     console.log(state);
+    console.log(error);
+    if (code !== undefined) {
+      return this.service.requestUserAccessToken({
+        code: code,
+        state: state,
+      });
+    }
     return { message: 'You can close this window now.' };
   }
 }
