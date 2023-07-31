@@ -1,5 +1,6 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query } from '@nestjs/common';
 import { AuthenticationService } from './authentication.service';
+import { AccessToken } from '@spotify/web-api-ts-sdk';
 
 @Controller()
 export class AuthenticationController {
@@ -35,4 +36,10 @@ export class AuthenticationController {
     }
     return { message: 'You can close this window now.' };
   }
+  // @Post('callback')
+  // callBack(@Body() body: AccessToken) {
+  //   console.log(body);
+  //   this.service.setTokens(body);
+  //   return { message: 'You can close this window now.' };
+  // }
 }

@@ -14,15 +14,43 @@ import {
   IErrorAuthorizationResponse,
   ISuccessAuthorizationResponse,
 } from './interfaces/userAuthorizationResponse.interface';
+import { AccessToken, SpotifyApi } from '@spotify/web-api-ts-sdk';
 
 @Injectable()
 export class AuthenticationService {
   private readonly state = 'fixed_state_for_testing_reasons';
+  private sdk: SpotifyApi;
+  private secret: ISecret;
+  private client_id = this.config.get<string>('client_id');
+  private client_secret = this.config.get<string>('client_secret');
   constructor(
     private readonly httpService: HttpService,
     private readonly config: ConfigService,
-    private readonly vaultService: VaultService,
-  ) {}
+    private readonly vault: VaultService,
+  ) {
+    this.secret = this.vault.getSecretById('fixed_state_for_testing_reasons');
+    this.sdk = SpotifyApi.withAccessToken(this.client_id, {
+      access_token: this.secret.accessToken,
+      refresh_token: this.secret.refreshToken,
+      expires_in: this.secret.expiresIn,
+      token_type: 'Bearer',
+    });
+  }
+
+  getSdk(): SpotifyApi {
+    return this.sdk;
+  }
+
+  async authenticate(secret: ISecret) {
+    // this.refreshToken();
+
+    this.sdk = SpotifyApi.withAccessToken(this.client_id, {
+      access_token: secret.accessToken,
+      refresh_token: secret.refreshToken,
+      expires_in: secret.expiresIn,
+      token_type: 'Bearer',
+    });
+  }
   async requestAccessToken(): Promise<IAuthenticationResponse> {
     try {
       const client_id = this.config.get<string>('client_id');
@@ -67,7 +95,6 @@ export class AuthenticationService {
   }
 
   requestUserAuthorization() {
-    const client_id = this.config.get<string>('client_id');
     const scope =
       'user-read-private user-read-email, user-read-currently-playing user-modify-playback-state user-read-playback-state';
     const redirect_uri =
@@ -75,7 +102,7 @@ export class AuthenticationService {
 
     return `https://accounts.spotify.com/authorize?${queryString.stringify({
       response_type: 'code',
-      client_id: client_id,
+      client_id: this.client_id,
       scope: scope,
       redirect_uri: redirect_uri,
       state: this.state,
@@ -100,9 +127,9 @@ export class AuthenticationService {
       createdAt: new Date(),
       updatedAt: new Date(),
     };
-    const updated = this.vaultService.updateSecret(secret);
+    const updated = this.vault.updateSecret(secret);
     if (updated === null) {
-      this.vaultService.addSecret(secret);
+      this.vault.addSecret(secret);
     }
 
     const data = {
@@ -136,8 +163,67 @@ export class AuthenticationService {
       secret.refreshToken = refresh_token;
       secret.expiresIn = expires_in;
       secret.scope = scope;
-      this.vaultService.updateSecret(secret);
+      this.vault.updateSecret(secret);
       return { message: 'You can close this now' };
     }
+  }
+
+  private async refreshToken() {
+    try {
+      const route = '/api/token';
+
+      const data = {
+        grant_type: 'refresh_token',
+        refresh_token: this.secret.refreshToken,
+      };
+      const response: AxiosResponse<IAuthenticationResponse | any> =
+        await firstValueFrom(
+          this.httpService.post<IAuthenticationResponse>(
+            route,
+            queryString.stringify(data),
+            {
+              headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                Authorization:
+                  'Basic ' +
+                  Buffer.from(
+                    `${this.client_id}:${this.client_secret}`,
+                  ).toString('base64'),
+              },
+            },
+          ),
+        );
+      console.log(response);
+      const { data: respData } = response;
+
+      this.secret = { ...this.secret, accessToken: respData.access_token };
+      this.vault.updateSecret(this.secret);
+    } catch (error) {
+      console.log(error);
+
+      if (error instanceof AxiosError) {
+        return {
+          message: error.message,
+          data: error.response.data,
+        };
+      }
+    }
+  }
+
+  setTokens(data: AccessToken) {
+    const secret: ISecret = {
+      state: this.state,
+      code: 'noCode',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      accessToken: data.access_token,
+      refreshToken: data.refresh_token,
+      expiresIn: data.expires_in,
+    };
+    const updated = this.vault.updateSecret(secret);
+    if (updated === null) {
+      this.vault.addSecret(secret);
+    }
+    this.authenticate(secret);
   }
 }

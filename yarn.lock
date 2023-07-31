@@ -810,6 +810,11 @@
   dependencies:
     "@sinonjs/commons" "^3.0.0"
 
+"@spotify/web-api-ts-sdk@^1.0.1":
+  version "1.0.1"
+  resolved "https://registry.yarnpkg.com/@spotify/web-api-ts-sdk/-/web-api-ts-sdk-1.0.1.tgz#1c622e77d8484f4f961b54da6a24fdc09730c0c4"
+  integrity sha512-gouo1MsXbyg38H5hFwTrbkZJfbQkFWRnT+mZfQo+UXQ/9hhSW69H/22qRiXg6rJQ2GofQo8OwBke4O03768kow==
+
 "@tsconfig/node10@^1.0.7":
   version "1.0.9"
   resolved "https://registry.yarnpkg.com/@tsconfig/node10/-/node10-1.0.9.tgz#df4907fc07a886922637b15e02d4cebc4c0021b2"

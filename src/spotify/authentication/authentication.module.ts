@@ -17,5 +17,6 @@ import { VaultModule } from '../vault/vault.module';
   ],
   providers: [AuthenticationService],
   controllers: [AuthenticationController],
+  exports: [AuthenticationService],
 })
 export class AuthenticationModule {}
